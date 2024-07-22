@@ -1,13 +1,14 @@
+import 'dotenv/config';
 import React, { useRef, useState } from 'react';
 import './App.css';
-
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/auth';
 import 'firebase/compat/firestore';
-
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { useCollectionData } from 'react-firebase-hooks/firestore';
+import OpenAI from 'openai';
 
+// Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyB5hA8bZiXxDao_2R4XR_MKVfj8gNRIs6s",
   authDomain: "chat-4ff4c.firebaseapp.com",
@@ -22,6 +23,10 @@ firebase.initializeApp(firebaseConfig);
 
 const auth = firebase.auth();
 const firestore = firebase.firestore();
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY // This is also the default, can be omitted
+});
 
 function App() {
   const [user] = useAuthState(auth);
@@ -44,20 +49,20 @@ function SignIn() {
   const signInWithGoogle = () => {
     const provider = new firebase.auth.GoogleAuthProvider();
     auth.signInWithPopup(provider);
-  }
+  };
 
   return (
     <>
       <button className="sign-in" onClick={signInWithGoogle}>Sign in with Google</button>
       <p>Do not violate the community guidelines or you will be banned for life!</p>
     </>
-  )
+  );
 }
 
 function SignOut() {
   return auth.currentUser && (
     <button className="sign-out" onClick={() => auth.signOut()}>Sign Out</button>
-  )
+  );
 }
 
 function ChatRoom() {
@@ -80,9 +85,19 @@ function ChatRoom() {
       photoURL
     });
 
+    if (formValue.startsWith('@artorias')) {
+      const response = await getAIResponse(formValue);
+      await messagesRef.add({
+        text: response,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        uid: 'artorias',
+        photoURL: 'https://api.adorable.io/avatars/23/artorias.png'
+      });
+    }
+
     setFormValue('');
     dummy.current.scrollIntoView({ behavior: 'smooth' });
-  }
+  };
 
   return (
     <>
@@ -96,7 +111,7 @@ function ChatRoom() {
         <button type="submit" disabled={!formValue}>🕊️</button>
       </form>
     </>
-  )
+  );
 }
 
 function ChatMessage(props) {
@@ -108,7 +123,16 @@ function ChatMessage(props) {
       <img src={photoURL || 'https://api.adorable.io/avatars/23/abott@adorable.png'} alt="Avatar" />
       <p>{text}</p>
     </div>
-  )
+  );
+}
+
+async function getAIResponse(message) {
+  const response = await openai.completions.create({
+    model: 'text-davinci-003',
+    prompt: message,
+    max_tokens: 150,
+  });
+  return response.choices[0].text.trim();
 }
 
 export default App;
