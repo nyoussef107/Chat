@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import React, { useRef, useState } from 'react';
 import './App.css';
 import firebase from 'firebase/compat/app';
@@ -6,7 +5,7 @@ import 'firebase/compat/auth';
 import 'firebase/compat/firestore';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { useCollectionData } from 'react-firebase-hooks/firestore';
-import OpenAI from 'openai';
+import axios from 'axios';
 
 // Firebase configuration
 const firebaseConfig = {
@@ -24,9 +23,27 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const firestore = firebase.firestore();
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY // This is also the default, can be omitted
-});
+const FLASK_SERVER_URL = 'http://127.0.0.1:5000';
+
+async function getAIResponse(message) {
+  try {
+    const response = await axios.post(`${FLASK_SERVER_URL}/chat`, { message });
+    return response.data.response;
+  } catch (error) {
+    console.error("Error fetching AI response:", error);
+    return "Sorry, there was an error.";
+  }
+}
+
+async function analyzeDocument(content) {
+  try {
+    const response = await axios.post(`${FLASK_SERVER_URL}/analyze-document`, { content });
+    return response.data.summary;
+  } catch (error) {
+    console.error("Error summarizing document:", error);
+    return "Sorry, there was an error summarizing the document.";
+  }
+}
 
 function App() {
   const [user] = useAuthState(auth);
@@ -34,7 +51,7 @@ function App() {
   return (
     <div className="App">
       <header>
-        <h1>⚛️🔥💬</h1>
+        <h1>⚛️ Artorias Chat</h1>
         <SignOut />
       </header>
 
@@ -72,6 +89,7 @@ function ChatRoom() {
 
   const [messages] = useCollectionData(query, { idField: 'id' });
   const [formValue, setFormValue] = useState('');
+  const [documentContent, setDocumentContent] = useState('');
 
   const sendMessage = async (e) => {
     e.preventDefault();
@@ -91,7 +109,7 @@ function ChatRoom() {
         text: response,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         uid: 'artorias',
-        photoURL: 'https://api.adorable.io/avatars/23/artorias.png'
+        photoURL: 'https://steamuserimages-a.akamaihd.net/ugc/82596531523449021/3FC0CB7008CEB3C51A0D75641DA615591A4C2203/?imw=5000&imh=5000&ima=fit&impolicy=Letterbox&imcolor=%23000000&letterbox=false'
       });
     }
 
@@ -99,17 +117,50 @@ function ChatRoom() {
     dummy.current.scrollIntoView({ behavior: 'smooth' });
   };
 
+  const handleDocumentUpload = async (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const content = e.target.result;
+        setDocumentContent(content);
+        const summary = await analyzeDocument(content);
+        await messagesRef.add({
+          text: `Document Summary:\n\n${summary}`,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          uid: 'artorias',
+          photoURL: 'https://steamuserimages-a.akamaihd.net/ugc/82596531523449021/3FC0CB7008CEB3C51A0D75641DA615591A4C2203/?imw=5000&imh=5000&ima=fit&impolicy=Letterbox&imcolor=%23000000&letterbox=false'
+        });
+      };
+      reader.readAsText(file);
+    }
+  };
+
   return (
     <>
       <main>
-        {messages && messages.map(msg => <ChatMessage key={msg.id} message={msg} />)}
+        {messages && messages.map(msg => (
+          <ChatMessage key={msg.id} message={msg} />
+        ))}
         <span ref={dummy}></span>
       </main>
 
-      <form onSubmit={sendMessage}>
-        <input value={formValue} onChange={(e) => setFormValue(e.target.value)} placeholder="Say something nice" />
-        <button type="submit" disabled={!formValue}>🕊️</button>
-      </form>
+      <div className="input-area">
+        <form onSubmit={sendMessage}>
+          <input
+            value={formValue}
+            onChange={(e) => setFormValue(e.target.value)}
+            placeholder="Say something nice"
+          />
+          <button type="submit" disabled={!formValue}>Send</button>
+        </form>
+        <div className="file-upload">
+          <label htmlFor="file-upload" className="custom-file-upload">
+            Upload
+          </label>
+          <input id="file-upload" type="file" onChange={handleDocumentUpload} />
+        </div>
+      </div>
     </>
   );
 }
@@ -120,19 +171,10 @@ function ChatMessage(props) {
 
   return (
     <div className={`message ${messageClass}`}>
-      <img src={photoURL || 'https://api.adorable.io/avatars/23/abott@adorable.png'} alt="Avatar" />
+      <img src={photoURL || 'https://steamuserimages-a.akamaihd.net/ugc/82596531523449021/3FC0CB7008CEB3C51A0D75641DA615591A4C2203/?imw=5000&imh=5000&ima=fit&impolicy=Letterbox&imcolor=%23000000&letterbox=false'} alt="User avatar" />
       <p>{text}</p>
     </div>
   );
-}
-
-async function getAIResponse(message) {
-  const response = await openai.completions.create({
-    model: 'text-davinci-003',
-    prompt: message,
-    max_tokens: 150,
-  });
-  return response.choices[0].text.trim();
 }
 
 export default App;
